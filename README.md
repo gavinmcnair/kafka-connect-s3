@@ -13,7 +13,7 @@ Key Features:
  * Easily read from a specific topic and partition - Index files make reading a particular offset very efficient, so you only have to download the data that you need.
  * Seek to a date & time - Your bucket will be broken into daily prefixes, which makes it possible to find data that was written around a specific date and time.
 
-## Archive Fork
+## Archive Fork
 
 This is a hard fork of the S3 Sink created by DeviantArt then modified by [Spredfast](https://github.com/spredfast/kafka-connect-s3) - This repository is currently not public.
 
