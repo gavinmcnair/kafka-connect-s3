@@ -18,8 +18,8 @@ apply plugin: 'io.codearte.nexus-staging'
 description = "kafka-connect-s3"
 
 allprojects  {
-    apply plugin: 'maven'
     apply plugin: 'idea'
+	apply plugin: 'java-library'
 
     group = 'com.spredfast.kafka.connect.s3'
 	version = '1.0'
@@ -55,8 +55,8 @@ shadowJar {
 }
 
 dependencies {
-	compile project(':sink')
-	compile project(':source')
+	implementation project(':sink')
+	implementation project(':source')
 }
 
 
@@ -96,5 +96,3 @@ test {
 		showStandardStreams = false
 	}
 }
-
-apply from: 'upload.gradle'
