@@ -84,4 +84,17 @@ ext {
 	pomDesc = 'S3 Source and Sink Connectors for Kafka Connect'
 }
 
+test {
+	testLogging {
+		events "passed", "skipped", "failed"
+
+		showExceptions true
+		exceptionFormat "full"
+		showCauses true
+		showStackTraces true
+
+		showStandardStreams = false
+	}
+}
+
 apply from: 'upload.gradle'
