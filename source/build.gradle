@@ -4,6 +4,8 @@ dependencies {
 	compile project(':common')
 
 	testCompile project(':sink')
-    testCompile group: 'junit', name: 'junit', version: '4.12'
-    testCompile group: 'org.mockito', name: 'mockito-all', version: '1.9.5'
+	testCompile group: 'org.testcontainers', name: 'testcontainers', version: '1.14.3'
+	testCompile group: 'org.testcontainers', name: 'localstack', version: '1.14.3'
+	testCompile group: 'junit', name: 'junit', version: '4.12'
+	testCompile group: 'org.mockito', name: 'mockito-all', version: '1.9.5'
 }

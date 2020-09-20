@@ -21,4 +21,4 @@ jobs:
             -v "$PWD:$PWD" \
             -w "$PWD" \
             openjdk:11-slim \
-            ./gradlew test
+            ./gradlew test --info
