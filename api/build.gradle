@@ -1,5 +1,5 @@
 description = ""
 
 dependencies {
-    compile group: 'org.apache.kafka', name: 'connect-api', version: '0.10.1.0'
+    api group: 'org.apache.kafka', name: 'connect-api', version: '2.4.1'
 }

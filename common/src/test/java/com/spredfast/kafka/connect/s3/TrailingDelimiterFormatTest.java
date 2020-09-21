@@ -1,19 +1,17 @@
 package com.spredfast.kafka.connect.s3;
 
-import static org.junit.Assert.assertEquals;
-import static org.junit.Assert.assertTrue;
-
-import java.io.IOException;
-import java.util.Arrays;
-import java.util.stream.Stream;
-
-import javax.xml.bind.DatatypeConverter;
-
-import org.apache.kafka.clients.producer.ProducerRecord;
-import org.junit.Test;
 import com.google.common.base.Charsets;
 import com.google.common.collect.ImmutableList;
 import com.google.common.collect.ImmutableMap;
+import org.apache.kafka.clients.producer.ProducerRecord;
+import org.junit.Test;
+
+import java.io.IOException;
+import java.util.Arrays;
+import java.util.Base64;
+import java.util.stream.Stream;
+
+import static org.junit.Assert.assertEquals;
 
 public class TrailingDelimiterFormatTest {
 
@@ -48,7 +46,7 @@ public class TrailingDelimiterFormatTest {
 
 	private void assertBytesAreEqual(byte[] expected, byte[] actual) {
 		if (!Arrays.equals(expected, actual)) {
-			assertEquals(DatatypeConverter.printHexBinary(expected), DatatypeConverter.printHexBinary(actual));
+			assertEquals(Base64.getEncoder().encodeToString(expected), Base64.getEncoder().encodeToString(actual));
 		}
 	}
 
