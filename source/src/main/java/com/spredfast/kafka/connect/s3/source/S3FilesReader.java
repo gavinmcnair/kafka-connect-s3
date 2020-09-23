@@ -18,16 +18,13 @@ import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import java.util.zip.GZIPInputStream;
 
+import com.amazonaws.services.s3.model.*;
+import com.amazonaws.util.CollectionUtils;
 import org.apache.kafka.clients.consumer.ConsumerRecord;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import com.amazonaws.AmazonClientException;
 import com.amazonaws.services.s3.AmazonS3;
-import com.amazonaws.services.s3.model.GetObjectRequest;
-import com.amazonaws.services.s3.model.ListObjectsRequest;
-import com.amazonaws.services.s3.model.ObjectListing;
-import com.amazonaws.services.s3.model.S3Object;
-import com.amazonaws.services.s3.model.S3ObjectSummary;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.ObjectReader;
 import com.spredfast.kafka.connect.s3.LazyString;
@@ -126,9 +123,18 @@ public class S3FilesReader implements Iterable<S3SourceRecord> {
 		return new Iterator<S3SourceRecord>() {
 			String currentKey;
 
-			ObjectListing objectListing;
 			Iterator<S3ObjectSummary> nextFile = Collections.emptyIterator();
 			Iterator<ConsumerRecord<byte[], byte[]>> iterator = Collections.emptyIterator();
+
+			ListObjectsV2Result objectListing;
+			ListObjectsV2Request request = new ListObjectsV2Request()
+				.withBucketName(config.bucket)
+				.withPrefix(config.keyPrefix)
+				.withStartAfter(config.startMarker)
+				.withDelimiter(null)
+				// we have to filter out chunk indexes on this end, so
+				// whatever the requested page size is, we'll need twice that
+				.withMaxKeys(config.pageSize * 2);
 
 			private void nextObject() {
 				while (!nextFile.hasNext() && hasMoreObjects()) {
@@ -138,21 +144,15 @@ public class S3FilesReader implements Iterable<S3SourceRecord> {
 					// there is an active, multi-partition consumer on the other end.
 					// to mitigate that, have as many tasks as partitions.
 					if (objectListing == null) {
-						objectListing = s3Client.listObjects(new ListObjectsRequest(
-							config.bucket,
-							config.keyPrefix,
-							config.startMarker,
-							null,
-							// we have to filter out chunk indexes on this end, so
-							// whatever the requested page size is, we'll need twice that
-							config.pageSize * 2
-						));
+						objectListing = s3Client.listObjectsV2(request);
 						log.debug("aws ls {}/{} after:{} = {}", config.bucket, config.keyPrefix, config.startMarker,
 							LazyString.of(() -> objectListing.getObjectSummaries().stream().map(S3ObjectSummary::getKey).collect(toList())));
 					} else {
-						String marker = objectListing.getNextMarker();
-						objectListing = s3Client.listNextBatchOfObjects(objectListing);
-						log.debug("aws ls {}/{} after:{} = {}", config.bucket, config.keyPrefix, marker,
+						String startAfter = objectListing.getObjectSummaries()
+							.get(objectListing.getObjectSummaries().size() - 1)
+							.getKey();
+						objectListing = s3Client.listObjectsV2(request.withStartAfter(startAfter));
+						log.debug("aws ls {}/{} after:{} = {}", config.bucket, config.keyPrefix, startAfter,
 							LazyString.of(() -> objectListing.getObjectSummaries().stream().map(S3ObjectSummary::getKey).collect(toList())));
 					}
 
