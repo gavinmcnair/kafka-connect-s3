@@ -1,5 +1,65 @@
 package com.spredfast.kafka.connect.s3;
 
+import com.amazonaws.services.s3.AmazonS3;
+import com.amazonaws.services.s3.model.S3ObjectSummary;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.google.common.base.Throwables;
+import com.google.common.collect.ImmutableList;
+import com.google.common.collect.ImmutableMap;
+import com.google.common.io.Files;
+import com.spredfast.kafka.connect.s3.json.ChunksIndex;
+import com.spredfast.kafka.connect.s3.sink.S3SinkConnector;
+import com.spredfast.kafka.connect.s3.sink.S3SinkTask;
+import com.spredfast.kafka.connect.s3.source.S3FilesReader;
+import com.spredfast.kafka.connect.s3.source.S3SourceConnector;
+import com.spredfast.kafka.connect.s3.source.S3SourceTask;
+import com.spredfast.kafka.test.KafkaIntegrationTests;
+import org.apache.http.Header;
+import org.apache.http.message.BasicHeader;
+import org.apache.kafka.clients.consumer.Consumer;
+import org.apache.kafka.clients.consumer.ConsumerRecord;
+import org.apache.kafka.clients.consumer.ConsumerRecords;
+import org.apache.kafka.clients.consumer.KafkaConsumer;
+import org.apache.kafka.clients.producer.KafkaProducer;
+import org.apache.kafka.clients.producer.Producer;
+import org.apache.kafka.clients.producer.ProducerRecord;
+import org.apache.kafka.common.TopicPartition;
+import org.apache.kafka.common.header.Headers;
+import org.apache.kafka.common.header.internals.RecordHeaders;
+import org.apache.kafka.common.serialization.StringDeserializer;
+import org.apache.kafka.common.serialization.StringSerializer;
+import org.apache.kafka.connect.storage.ConverterType;
+import org.apache.kafka.connect.storage.FileOffsetBackingStore;
+import org.apache.kafka.connect.storage.StringConverter;
+import org.apache.log4j.ConsoleAppender;
+import org.apache.log4j.Level;
+import org.apache.log4j.Logger;
+import org.apache.log4j.PatternLayout;
+import org.junit.jupiter.api.AfterAll;
+import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.BeforeAll;
+import org.junit.jupiter.api.Test;
+
+import java.io.File;
+import java.io.IOException;
+import java.nio.charset.StandardCharsets;
+import java.time.Duration;
+import java.util.ArrayList;
+import java.util.Collection;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.Objects;
+import java.util.Set;
+import java.util.concurrent.ExecutionException;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
+import java.util.function.Function;
+import java.util.stream.Collectors;
+import java.util.stream.IntStream;
+import java.util.stream.Stream;
+import java.util.stream.StreamSupport;
+
 import static com.google.common.collect.Maps.immutableEntry;
 import static com.google.common.collect.Maps.transformValues;
 import static com.spredfast.kafka.test.KafkaIntegrationTests.givenKafkaConnect;
@@ -11,66 +71,11 @@ import static java.util.stream.Collectors.joining;
 import static java.util.stream.Collectors.minBy;
 import static java.util.stream.Collectors.toList;
 import static java.util.stream.Collectors.toSet;
-import static org.junit.Assert.assertEquals;
-import static org.junit.Assert.assertNotEquals;
-import static org.junit.Assert.assertTrue;
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNotEquals;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
-import java.io.File;
-import java.io.IOException;
-import java.time.Duration;
-import java.util.ArrayList;
-import java.util.Arrays;
-import java.util.HashMap;
-import java.util.List;
-import java.util.Map;
-import java.util.Properties;
-import java.util.Set;
-import java.util.concurrent.ExecutionException;
-import java.util.concurrent.TimeUnit;
-import java.util.concurrent.TimeoutException;
-import java.util.stream.IntStream;
-import java.util.stream.Stream;
-import java.util.stream.StreamSupport;
-
-import org.apache.kafka.clients.consumer.Consumer;
-import org.apache.kafka.clients.consumer.ConsumerRecords;
-import org.apache.kafka.clients.consumer.KafkaConsumer;
-import org.apache.kafka.clients.producer.KafkaProducer;
-import org.apache.kafka.clients.producer.Producer;
-import org.apache.kafka.clients.producer.ProducerRecord;
-import org.apache.kafka.common.TopicPartition;
-import org.apache.kafka.common.serialization.StringDeserializer;
-import org.apache.kafka.common.serialization.StringSerializer;
-import org.apache.kafka.connect.storage.FileOffsetBackingStore;
-import org.apache.kafka.connect.storage.StringConverter;
-import org.apache.log4j.ConsoleAppender;
-import org.apache.log4j.Level;
-import org.apache.log4j.Logger;
-import org.apache.log4j.PatternLayout;
-import org.junit.After;
-import org.junit.AfterClass;
-import org.junit.BeforeClass;
-import org.junit.Ignore;
-import org.junit.Test;
-import com.amazonaws.services.s3.AmazonS3;
-import com.amazonaws.services.s3.AmazonS3Client;
-import com.amazonaws.services.s3.model.S3ObjectSummary;
-import com.fasterxml.jackson.databind.ObjectMapper;
-import com.google.common.base.Throwables;
-import com.google.common.collect.ImmutableList;
-import com.google.common.collect.ImmutableMap;
-import com.google.common.io.Files;
-import com.spotify.docker.client.DefaultDockerClient;
-import com.spotify.docker.client.exceptions.DockerCertificateException;
-import com.spredfast.kafka.connect.s3.json.ChunksIndex;
-import com.spredfast.kafka.connect.s3.sink.S3SinkConnector;
-import com.spredfast.kafka.connect.s3.sink.S3SinkTask;
-import com.spredfast.kafka.connect.s3.source.S3FilesReader;
-import com.spredfast.kafka.connect.s3.source.S3SourceConnector;
-import com.spredfast.kafka.connect.s3.source.S3SourceTask;
-import com.spredfast.kafka.test.KafkaIntegrationTests;
-
-@Ignore("Doesn't seem to work on CircleCI 2.0 - I believe it has to do with the Docker Client not being compatible")
 public class S3ConnectorIntegrationTest {
 
 	private static final String S3_BUCKET = "connect-system-test";
@@ -78,21 +83,19 @@ public class S3ConnectorIntegrationTest {
 	private static KafkaIntegrationTests.Kafka kafka;
 	private static KafkaIntegrationTests.KafkaConnect connect;
 	private static FakeS3 s3;
-	private static DefaultDockerClient dockerClient;
 	private static KafkaIntegrationTests.KafkaConnect stringConnect;
 
-	@BeforeClass
+	@BeforeAll
 	public static void startKafka() throws Exception {
 		kafka = givenLocalKafka();
-		connect = givenKafkaConnect(kafka.localPort());
-		stringConnect = givenKafkaConnect(kafka.localPort(), ImmutableMap.of(
-			"value.converter", StringConverter.class.getName()
+		connect = givenKafkaConnect(kafka.getLocalPort());
+		stringConnect = givenKafkaConnect(kafka.getLocalPort(), ImmutableMap.of(
+			"value.converter", StringConverter.class.getName(),
+			"converter.type", ConverterType.VALUE.getName()
 		));
-		dockerClient = givenDockerClient();
 
-		s3 = FakeS3.create(dockerClient);
-
-		s3.start(dockerClient);
+		s3 = new FakeS3();
+		s3.start();
 
 		ConsoleAppender consoleAppender = new ConsoleAppender(new PatternLayout(PatternLayout.TTCC_CONVERSION_PATTERN));
 		Logger.getRootLogger().addAppender(consoleAppender);
@@ -103,75 +106,23 @@ public class S3ConnectorIntegrationTest {
 		Logger.getLogger(FileOffsetBackingStore.class).setLevel(Level.DEBUG);
 	}
 
-	private static DefaultDockerClient givenDockerClient() throws DockerCertificateException {
-		return DefaultDockerClient.fromEnv().build();
-	}
-
-
-	@AfterClass
+	@AfterAll
 	public static void stopKafka() throws Exception {
 		tryClose(connect);
 		tryClose(stringConnect);
 		tryClose(kafka);
-		tryClose(() -> s3.close(dockerClient));
-		tryClose(dockerClient);
+		tryClose(() -> s3.close());
 	}
 
-	private static void tryClose(AutoCloseable doClose) {
-		try {
-			doClose.close();
-		} catch (Exception e) {
-			e.printStackTrace();
-		}
-	}
-
-	@After
+	@AfterEach
 	public void cleanup() {
 		// stop all the connectors
 		connect.herder().connectors((e, connectors) ->
 			connectors.forEach(this::whenTheSinkIsStopped));
 	}
 
-
-	private void whenTheSinkIsStopped(String name) {
-		connect.herder().putConnectorConfig(name, null, true,
-			(e, c) -> { if (e != null) Throwables.propagate(e); });
-	}
-
-	// this seems to take at least 20 seconds to get a segment deleted :(
-	private Map.Entry<String, List<Long>> slow_givenATopicWithNonZeroStartOffsets() throws InterruptedException, ExecutionException, TimeoutException {
-		Properties props = new Properties();
-		props.put("segment.bytes", "100");
-		props.put("segment.ms", "500");
-		props.put("retention.ms", "500");
-		String topic = kafka.createUniqueTopic("non-zero-", 2, props);
-		Producer<String, String> producer = givenKafkaProducer();
-
-		// produce a bunch of records
-		for(int i = 0; i < 200; i++) {
-			producer.send(new ProducerRecord<>(topic, i % 2, "skip", "ignore")).get(5, TimeUnit.SECONDS);
-		}
-		Consumer<String, String> consumer = givenAConsumer();
-		consumer.assign(ImmutableList.of(new TopicPartition(topic, 0), new TopicPartition(topic, 1)));
-		ImmutableList<Long> offsets = waitForPassing(Duration.ofMinutes(10), () -> {
-			consumer.seekToBeginning(ImmutableList.of(new TopicPartition(topic, 0), new TopicPartition(topic, 1)));
-
-			long zero = consumer.position(new TopicPartition(topic, 0));
-			long one = consumer.position(new TopicPartition(topic, 1));
-			assertNotEquals("partition 0: 0 has rolled out", 0L, zero);
-			assertNotEquals("partition 1: 0 has rolled out", 0L, one);
-
-			return ImmutableList.of(zero, one);
-		});
-		consumer.close();
-		// revert the retention to something reasonable
-		props.put("retention.ms", "300000");
-		kafka.updateTopic(topic, props);
-		return immutableEntry(topic, offsets);
-	}
-
 	@Test
-	public void binaryWithKeys() throws Exception {
+	void binaryWithKeys() throws Exception {
 		// this gross, expensive initialization is necessary to ensure we are handling offsets correctly
 		// If we're not, the restart will produce duplicates in S3, and files with incorrect offsets.
 		Map.Entry<String, List<Long>> topicAndOffsets = slow_givenATopicWithNonZeroStartOffsets();
@@ -179,11 +130,11 @@ public class S3ConnectorIntegrationTest {
 
 		Producer<String, String> producer = givenKafkaProducer();
 
-		givenRecords(sinkTopic, producer);
+		givenRecords(sinkTopic, producer, 0);
 
 		Map<String, String> sinkConfig = givenSinkConfig(sinkTopic);
 		AmazonS3 s3 = givenS3Client(sinkConfig);
-
+		s3.createBucket(S3_BUCKET);
 		whenTheConnectorIsStarted(sinkConfig);
 
 		thenFilesAreWrittenToS3(s3, sinkTopic, topicAndOffsets.getValue());
@@ -196,7 +147,7 @@ public class S3ConnectorIntegrationTest {
 		thenMessagesAreRestored(sourceTopic, s3);
 
 		whenConnectIsStopped();
-		givenMoreData(sinkTopic, producer);
+		givenRecords(sinkTopic, producer, 5);
 
 		whenConnectIsRestarted();
 		whenTheConnectorIsStarted(sinkConfig);
@@ -211,49 +162,86 @@ public class S3ConnectorIntegrationTest {
 		thenTempFilesAreCleanedUp(sinkConfig);
 	}
 
+	@Test
+	void binaryWithHeaders() throws Exception {
+		Map.Entry<String, List<Long>> topicAndOffsets = givenATopicWithZeroStartOffsets();
+		String sinkTopic = topicAndOffsets.getKey();
 
-	private void thenTempFilesAreCleanedUp(Map<String, String> sinkConfig) {
-		//noinspection ConstantConditions
-		waitForPassing(Duration.ofSeconds(3), () ->
-			assertEquals(ImmutableList.of(), ImmutableList.copyOf(new File(sinkConfig.get("local.buffer.dir")).list())));
+		Producer<String, String> producer = givenKafkaProducer();
+
+		Function<Integer, Headers> headersFunction = (i) -> {
+			Headers headers = new RecordHeaders();
+			headers.add("headerWithEmptyValue", "".getBytes(StandardCharsets.UTF_8));
+			headers.add("headerWithNullValue", null);
+			headers.add("headerWithValue", ("headerValue:" + i).getBytes(StandardCharsets.UTF_8));
+			headers.add("", ("headerValueWithEmptyKey:" + i).getBytes(StandardCharsets.UTF_8));
+			return headers;
+		};
+
+		int numberOfMessages = 5;
+		List<TestRecord> expectedRecords = IntStream.range(0, numberOfMessages).mapToObj(i -> {
+				ProducerRecord<String, String> producerRecord = new ProducerRecord<>(sinkTopic, 0, "key:" + i, "value:" + i, headersFunction.apply(i));
+				try {
+					producer.send(producerRecord).get(5, TimeUnit.SECONDS);
+				} catch (Exception e) {
+					throw Throwables.propagate(e);
+				}
+				return new TestRecord(producerRecord.key(), producerRecord.value(), producerRecord.headers());
+			}
+		).collect(Collectors.toList());
+
+
+		Map<String, String> sinkConfig = givenSinkConfig(sinkTopic);
+		AmazonS3 s3 = givenS3Client(sinkConfig);
+		s3.createBucket(S3_BUCKET);
+		whenTheConnectorIsStarted(sinkConfig);
+
+		String sourceTopic = kafka.createUniqueTopic("bin-source-replay-", 2);
+		Map<String, String> sourceConfig = givenSourceConfig(sourceTopic, sinkTopic);
+		whenTheConnectorIsStarted(sourceConfig);
+
+		List<TestRecord> records = consumeTopic(sourceTopic, numberOfMessages).stream()
+			.map(r -> new TestRecord(r.key(), r.value(), r.headers()))
+			.collect(toList());
+		assertThat(records).containsExactlyInAnyOrderElementsOf(expectedRecords);
 	}
 
 	@Test
-	public void stringWithoutKeys() throws Exception {
+	void stringWithoutKeys() throws Exception {
 		String sinkTopic = kafka.createUniqueTopic("txt-sink-source-", 2);
 
 		Producer<String, String> producer = givenKafkaProducer();
 
-		givenRecords(sinkTopic, producer);
+		givenRecords(sinkTopic, producer, 0);
 
-		Map<String, String> sinkConfig = givenStringValues(givenSinkConfig(sinkTopic));
+		Map<String, String> sinkConfig = givenStringWithoutKeysValues(givenSinkConfig(sinkTopic));
 		whenTheConnectorIsStarted(sinkConfig, stringConnect);
 
 		String sourceTopic = kafka.createUniqueTopic("txt-source-replay-", 2);
 
-		Map<String, String> sourceConfig = givenStringValues(givenSourceConfig(sourceTopic, sinkTopic));
+		Map<String, String> sourceConfig = givenStringWithoutKeysValues(givenSourceConfig(sourceTopic, sinkTopic));
 		whenTheConnectorIsStarted(sourceConfig, stringConnect);
 
-		thenMessagesAreRestored(sourceTopic, givenS3Client(sinkConfig));
+		AmazonS3 s3 = givenS3Client(sinkConfig);
+		s3.createBucket(S3_BUCKET);
+
+		thenMessagesAreRestored(sourceTopic, s3);
 	}
 
-	private Map<String, String> givenStringValues(Map<String, String> config) {
+	private Map<String, String> givenStringWithoutKeysValues(Map<String, String> config) {
 		Map<String, String> copy = new HashMap<>(config);
 		copy.remove("key.converter");
 		copy.remove("format.include.keys");
 		copy.remove("format");
 		copy.putAll(ImmutableMap.of(
-			"value.converter", StringConverter.class.getName()
+			"value.converter", StringConverter.class.getName(),
+			"converter.type", ConverterType.VALUE.getName()
 		));
 		return copy;
 	}
 
-	private void whenConnectIsRestarted() throws IOException {
+	private void whenConnectIsRestarted() {
 		connect = connect.restart();
-	}
-
-	public void givenMoreData(String sinkTopic, Producer<String, String> producer) throws InterruptedException, ExecutionException, TimeoutException {
-		givenRecords(sinkTopic, producer, 5);
 	}
 
 	private void whenConnectIsStopped() throws Exception {
@@ -262,15 +250,12 @@ public class S3ConnectorIntegrationTest {
 
 
 	private Consumer<String, String> givenAConsumer() {
-		return new KafkaConsumer<>(ImmutableMap.of("bootstrap.servers", "localhost:" + kafka.localPort()),
+		return new KafkaConsumer<>(ImmutableMap.of("bootstrap.servers", "localhost:" + kafka.getLocalPort()),
 			new StringDeserializer(), new StringDeserializer());
 	}
 
-
 	private AmazonS3 givenS3Client(Map<String, String> config) {
-		AmazonS3 s3 = S3.s3client(config);
-		s3.createBucket(S3_BUCKET);
-		return s3;
+		return S3.s3client(config);
 	}
 
 	private void whenTheConnectorIsStarted(Map<String, String> config) {
@@ -279,7 +264,8 @@ public class S3ConnectorIntegrationTest {
 
 	private void whenTheConnectorIsStarted(Map<String, String> config, KafkaIntegrationTests.KafkaConnect connect) {
 		connect.herder().putConnectorConfig(config.get("name"),
-			config, false, (e, s) -> {});
+			config, false, (e, s) -> {
+			});
 	}
 
 	private void thenFilesAreWrittenToS3(AmazonS3 s3, String sinkTopic, List<Long> offsets) {
@@ -296,19 +282,11 @@ public class S3ConnectorIntegrationTest {
 					.collect(groupingBy(Map.Entry::getKey, minBy(Map.Entry.comparingByValue()))),
 				(optEntry) -> optEntry.map(Map.Entry::getValue).orElse(0L));
 
-			assertTrue(startOffsets + "[0] !~ " + offsets, ofNullable(startOffsets.get(0)).orElse(-1L) >= offsets.get(0));
-			assertTrue(startOffsets + "[1] !~ " + offsets, ofNullable(startOffsets.get(1)).orElse(-1L) >= offsets.get(1));
+			assertTrue(ofNullable(startOffsets.get(0)).orElse(-1L) >= offsets.get(0), startOffsets + "[0] !~ " + offsets);
+			assertTrue(ofNullable(startOffsets.get(1)).orElse(-1L) >= offsets.get(1), startOffsets + "[1] !~ " + offsets);
 		});
 
 	}
-
-	@SafeVarargs
-	private final <T> void assertEqualsOneOf(String message, T actual, T... expected) {
-		if (!Arrays.stream(expected).anyMatch(e -> e.equals(message))) {
-			assertEquals(message, expected[0], actual);
-		}
-	}
-
 
 	private Map<String, String> givenSourceConfig(String sourceTopic, String sinkTopic) throws IOException {
 		return s3Config(ImmutableMap.<String, String>builder()
@@ -347,12 +325,10 @@ public class S3ConnectorIntegrationTest {
 			.build();
 	}
 
-	private void givenRecords(String originalTopic, Producer<String, String> producer) throws InterruptedException, java.util.concurrent.ExecutionException, java.util.concurrent.TimeoutException {
-		givenRecords(originalTopic, producer, 0);
-	}
-
-	private void givenRecords(String originalTopic, Producer<String, String> producer, int start) throws InterruptedException, java.util.concurrent.ExecutionException, java.util.concurrent.TimeoutException {
+	private void givenRecords(String originalTopic, Producer<String, String> producer, int start) {
 		// send odds to partition 1, and evens to 0
+		Collection<Header> headers = new ArrayList<>();
+		headers.add(new BasicHeader("hk", "hv"));
 		IntStream.range(start, start + 4).forEach(i -> {
 			try {
 				producer.send(new ProducerRecord<>(originalTopic, i % 2, "key:" + i, "value:" + i)).get(5, TimeUnit.SECONDS);
@@ -362,8 +338,40 @@ public class S3ConnectorIntegrationTest {
 		});
 	}
 
+
+	private List<ConsumerRecord<String, String>> consumeTopic(final String topic, final int numberOfMessages) {
+		Consumer<String, String> consumer = givenAConsumer();
+		ImmutableList<TopicPartition> partitions = ImmutableList.of(
+			new TopicPartition(topic, 0),
+			new TopicPartition(topic, 1)
+		);
+		consumer.assign(partitions);
+		consumer.seekToBeginning(partitions);
+
+		List<ConsumerRecord<String, String>> results = new ArrayList<>();
+		waitForPassing(Duration.ofSeconds(30), () -> {
+			ConsumerRecords<String, String> records = consumer.poll(500L);
+			StreamSupport.stream(records.spliterator(), false)
+				.filter(r -> !"skip".equals(r.key()))
+				.forEach(results::add);
+			assertEquals(numberOfMessages, results.size(), "Not all of the expected messages exist on the topic");
+		});
+		return results;
+	}
+
+	private void thenTempFilesAreCleanedUp(Map<String, String> sinkConfig) {
+		//noinspection ConstantConditions
+		waitForPassing(Duration.ofSeconds(3), () ->
+			assertEquals(ImmutableList.of(), ImmutableList.copyOf(new File(sinkConfig.get("local.buffer.dir")).list())));
+	}
+
+
 	private void thenMessagesAreRestored(String sourceTopic, AmazonS3 s3) {
 		thenMessagesAreRestored(sourceTopic, 0, s3);
+	}
+
+	private void thenMoreMessagesAreRestored(String sourceTopic, AmazonS3 s3) {
+		thenMessagesAreRestored(sourceTopic, 5, s3);
 	}
 
 	private void thenMessagesAreRestored(String sourceTopic, int start, AmazonS3 s3) {
@@ -385,14 +393,13 @@ public class S3ConnectorIntegrationTest {
 			StreamSupport.stream(records.spliterator(), false)
 				.filter(r -> !"skip".equals(r.key()))
 				.forEach(r -> results.get(r.partition()).add(r.value()));
-
-			assertEquals("got all the records for 0 " + results, 2, distinctAfter(start, results.get(0)).count());
-			assertEquals("got all the records for 1 " + results, 2, distinctAfter(start, results.get(1)).count());
+			assertEquals(2, distinctAfter(start, results.get(0)).count(), "got all the records for 0 " + results);
+			assertEquals(2, distinctAfter(start, results.get(1)).count(), "got all the records for 1 " + results);
 		});
 
 		boolean startOdd = (start % 2 == 1);
-		List<String> evens = results.get(0).stream().skip(start / 2).collect(toList());
-		List<String> odds = results.get(1).stream().skip(start / 2).collect(toList());
+		List<String> evens = results.get(0).stream().distinct().skip(start / 2).collect(toList());
+		List<String> odds = results.get(1).stream().distinct().skip(start / 2).collect(toList());
 		ImmutableList<ImmutableList<String>> expected = ImmutableList.of(
 			ImmutableList.of("value:" + (0 + start), "value:" + (2 + start)),
 			ImmutableList.of("value:" + (1 + start), "value:" + (3 + start))
@@ -408,36 +415,137 @@ public class S3ConnectorIntegrationTest {
 					try {
 						return Stream.concat(Stream.of("\n===" + idx.getKey() + "==="),
 							((ChunksIndex) new ObjectMapper().readerFor(ChunksIndex.class).readValue(s3.getObject(S3_BUCKET, idx.getKey()).getObjectContent()))
-							.chunks.stream().map(c -> String.format("[%d..%d]",
-								c.first_record_offset, c.first_record_offset + c.num_records)));
+								.chunks.stream().map(c -> String.format("[%d..%d]",
+									c.first_record_offset, c.first_record_offset + c.num_records)));
 					} catch (IOException e) {
 						return null;
 					}
 				}).collect(joining("\n"));
 
 			// NOTE: results is asserted to assist in debugging. it may contain values that should be skipped
-			assertEquals("records restored to same partitions, in-order. Chunks = " + chunks, expected, results);
+			assertEquals(expected, results, "records restored to same partitions, in-order. Chunks = " + chunks);
 		}
 
 		consumer.close();
+	}
+
+	private static void tryClose(AutoCloseable doClose) {
+		try {
+			doClose.close();
+		} catch (Exception e) {
+			e.printStackTrace();
+		}
+	}
+
+	private void whenTheSinkIsStopped(String name) {
+		connect.herder().putConnectorConfig(name, null, true,
+			(e, c) -> {
+				if (e != null) Throwables.propagate(e);
+			});
+	}
+
+	// this seems to take at least 20 seconds to get a segment deleted :(
+	private Map.Entry<String, List<Long>> slow_givenATopicWithNonZeroStartOffsets() throws InterruptedException, ExecutionException, TimeoutException {
+		Map<String, String> props = new HashMap<>();
+		props.put("segment.bytes", "100");
+		props.put("segment.ms", "500");
+		props.put("retention.ms", "500");
+		String topic = kafka.createUniqueTopic("non-zero-", 2, props);
+		Producer<String, String> producer = givenKafkaProducer();
+
+		// produce a bunch of records
+		for (int i = 0; i < 200; i++) {
+			producer.send(new ProducerRecord<>(topic, i % 2, "skip", "ignore")).get(5, TimeUnit.SECONDS);
+		}
+		Consumer<String, String> consumer = givenAConsumer();
+		consumer.assign(ImmutableList.of(new TopicPartition(topic, 0), new TopicPartition(topic, 1)));
+		ImmutableList<Long> offsets = waitForPassing(Duration.ofMinutes(10), () -> {
+			consumer.seekToBeginning(ImmutableList.of(new TopicPartition(topic, 0), new TopicPartition(topic, 1)));
+
+			long zero = consumer.position(new TopicPartition(topic, 0));
+			long one = consumer.position(new TopicPartition(topic, 1));
+			assertNotEquals(0L, zero, "partition 0: 0 has rolled out");
+			assertNotEquals(0L, one, "partition 1: 0 has rolled out");
+
+			return ImmutableList.of(zero, one);
+		});
+		consumer.close();
+		// revert the retention to something reasonable
+		props.put("retention.ms", "300000");
+		kafka.updateTopic(topic, props);
+		return immutableEntry(topic, offsets);
+	}
+
+	private Map.Entry<String, List<Long>> givenATopicWithZeroStartOffsets() {
+		Map<String, String> props = new HashMap<>();
+		props.put("segment.ms", "500");
+		props.put("retention.ms", "300000");
+		String topic = kafka.createUniqueTopic("zero-", 2, props);
+
+		Consumer<String, String> consumer = givenAConsumer();
+		consumer.assign(ImmutableList.of(new TopicPartition(topic, 0), new TopicPartition(topic, 1)));
+		ImmutableList<Long> offsets = waitForPassing(Duration.ofSeconds(10), () -> {
+			consumer.seekToBeginning(ImmutableList.of(new TopicPartition(topic, 0), new TopicPartition(topic, 1)));
+
+			long zero = consumer.position(new TopicPartition(topic, 0));
+			long one = consumer.position(new TopicPartition(topic, 1));
+			assertEquals(0L, zero, "partition 0: 0 has rolled out");
+			assertEquals(0L, one, "partition 1: 0 has rolled out");
+
+			return ImmutableList.of(zero, one);
+		});
+		consumer.close();
+
+		return immutableEntry(topic, offsets);
 	}
 
 	private Stream<String> distinctAfter(int start, List<String> list) {
 		return list.stream().distinct().skip(start / 2);
 	}
 
-	private void thenMoreMessagesAreRestored(String sourceTopic, AmazonS3 s3) {
-		thenMessagesAreRestored(sourceTopic, 5, s3);
-	}
-
-
 	private Producer<String, String> givenKafkaProducer() {
 		return new KafkaProducer<>(ImmutableMap.<String, Object>builder()
-			.put("bootstrap.servers", "localhost:" + kafka.localPort())
+			.put("bootstrap.servers", "localhost:" + kafka.getLocalPort())
 			.put("key.serializer", StringSerializer.class.getName())
 			.put("value.serializer", StringSerializer.class.getName())
 			.put("retries", "5")
 			.put("acks", "all")
 			.build());
 	}
+
+
+	public static class TestRecord {
+		String key;
+		String value;
+		Headers headers;
+
+		public TestRecord(final String key, final String value, final Headers headers) {
+			this.key = key;
+			this.value = value;
+			this.headers = headers;
+		}
+
+		@Override
+		public boolean equals(final Object o) {
+			if (this == o) return true;
+			if (o == null || getClass() != o.getClass()) return false;
+			final TestRecord that = (TestRecord) o;
+			return Objects.equals(key, that.key) && Objects.equals(value, that.value) && Objects.equals(headers, that.headers);
+		}
+
+		@Override
+		public int hashCode() {
+			return Objects.hash(key, value, headers);
+		}
+
+		@Override
+		public String toString() {
+			return "TestRecord{" +
+				"key='" + key + '\'' +
+				", value='" + value + '\'' +
+				", headers='" + headers + '\'' +
+				'}';
+		}
+	}
+
 }

@@ -1,10 +1,20 @@
 package com.spredfast.kafka.connect.s3.source;
 
-import static java.util.stream.Collectors.toList;
-import static java.util.stream.Collectors.toMap;
-import static java.util.stream.Collectors.toSet;
+import com.amazonaws.services.s3.AmazonS3;
+import com.amazonaws.services.s3.model.AmazonS3Exception;
+import com.spredfast.kafka.connect.s3.AlreadyBytesConverter;
+import com.spredfast.kafka.connect.s3.Configure;
+import com.spredfast.kafka.connect.s3.Constants;
+import com.spredfast.kafka.connect.s3.S3;
+import com.spredfast.kafka.connect.s3.S3RecordFormat;
+import org.apache.kafka.connect.data.SchemaAndValue;
+import org.apache.kafka.connect.errors.ConnectException;
+import org.apache.kafka.connect.source.SourceRecord;
+import org.apache.kafka.connect.source.SourceTask;
+import org.apache.kafka.connect.storage.Converter;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
-import java.io.UnsupportedEncodingException;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.HashMap;
@@ -16,20 +26,9 @@ import java.util.Optional;
 import java.util.Set;
 import java.util.concurrent.atomic.AtomicBoolean;
 
-import org.apache.kafka.connect.data.SchemaAndValue;
-import org.apache.kafka.connect.errors.ConnectException;
-import org.apache.kafka.connect.source.SourceRecord;
-import org.apache.kafka.connect.source.SourceTask;
-import org.apache.kafka.connect.storage.Converter;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
-import com.amazonaws.services.s3.AmazonS3;
-import com.amazonaws.services.s3.model.AmazonS3Exception;
-import com.spredfast.kafka.connect.s3.AlreadyBytesConverter;
-import com.spredfast.kafka.connect.s3.Constants;
-import com.spredfast.kafka.connect.s3.Configure;
-import com.spredfast.kafka.connect.s3.S3;
-import com.spredfast.kafka.connect.s3.S3RecordFormat;
+import static java.util.stream.Collectors.toList;
+import static java.util.stream.Collectors.toMap;
+import static java.util.stream.Collectors.toSet;
 
 public class S3SourceTask extends SourceTask {
 	private static final Logger log = LoggerFactory.getLogger(S3SourceTask.class);
@@ -75,7 +74,7 @@ public class S3SourceTask extends SourceTask {
 		}
 	}
 
-	private void tryReadFromStoredOffsets() throws UnsupportedEncodingException {
+	private void tryReadFromStoredOffsets() {
 		String bucket = configGet("s3.bucket").orElseThrow(() -> new ConnectException("No bucket configured!"));
 		String prefix = configGet("s3.prefix").orElse("");
 
@@ -125,7 +124,7 @@ public class S3SourceTask extends SourceTask {
 			S3FilesReader.InputFilter.GUNZIP,
 			S3FilesReader.PartitionFilter.from((topic, partition) ->
 				(topics.isEmpty() || topics.contains(topic))
-				&& partitionNumbers.contains(partition))
+					&& partitionNumbers.contains(partition))
 		);
 
 		log.debug("{} reading from S3 with offsets {}", name(), offsets);
@@ -148,7 +147,7 @@ public class S3SourceTask extends SourceTask {
 		}
 
 		// AWS errors will happen. Nothing to do about it but sleep and try again.
-		while(!stopped.get()) {
+		while (!stopped.get()) {
 			try {
 				return getSourceRecords(results);
 			} catch (AmazonS3Exception e) {
@@ -188,7 +187,10 @@ public class S3SourceTask extends SourceTask {
 			results.add(new SourceRecord(record.file().asMap(), record.offset().asMap(), topic,
 				record.partition(),
 				key.map(SchemaAndValue::schema).orElse(null), key.map(SchemaAndValue::value).orElse(null),
-				value.schema(), value.value()));
+				value.schema(), value.value(),
+				null,
+				record.headers()
+			));
 		}
 
 		log.debug("{} returning {} records.", name(), results.size());
