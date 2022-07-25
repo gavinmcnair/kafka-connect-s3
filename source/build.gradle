@@ -4,8 +4,13 @@ dependencies {
 	api project(':common')
 
 	testImplementation project(':sink')
-	testImplementation group: 'org.testcontainers', name: 'testcontainers', version: '1.14.3'
-	testImplementation group: 'org.testcontainers', name: 'localstack', version: '1.14.3'
-	testImplementation group: 'junit', name: 'junit', version: '4.12'
+	testImplementation "org.junit.jupiter:junit-jupiter:5.8.2"
+	testImplementation "org.testcontainers:testcontainers:1.17.3"
+	testImplementation "org.testcontainers:localstack:1.17.3"
+	testImplementation "org.testcontainers:junit-jupiter:1.17.3"
 	testImplementation group: 'org.mockito', name: 'mockito-all', version: '1.9.5'
+}
+
+test {
+	useJUnitPlatform()
 }
