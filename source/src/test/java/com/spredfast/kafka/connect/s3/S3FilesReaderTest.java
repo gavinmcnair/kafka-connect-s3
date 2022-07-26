@@ -11,6 +11,9 @@ import com.spredfast.kafka.connect.s3.source.S3Partition;
 import com.spredfast.kafka.connect.s3.source.S3SourceConfig;
 import com.spredfast.kafka.connect.s3.source.S3SourceRecord;
 import org.apache.kafka.clients.producer.ProducerRecord;
+import org.apache.kafka.common.header.Headers;
+import org.apache.kafka.common.header.internals.RecordHeader;
+import org.apache.kafka.common.header.internals.RecordHeaders;
 import org.apache.kafka.connect.data.Schema;
 import org.apache.kafka.connect.data.SchemaAndValue;
 import org.apache.kafka.connect.storage.Converter;
@@ -22,6 +25,7 @@ import org.testcontainers.shaded.com.google.common.collect.ImmutableMap;
 import java.io.File;
 import java.io.IOException;
 import java.nio.charset.Charset;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
@@ -30,7 +34,11 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Random;
+import java.util.function.BiFunction;
+import java.util.stream.Collectors;
+import java.util.stream.IntStream;
 import java.util.stream.Stream;
+import java.util.stream.StreamSupport;
 
 import static java.util.stream.Collectors.toList;
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -42,6 +50,9 @@ class S3FilesReaderTest {
 	private final FakeS3 s3 = new FakeS3();
 	private String bucketName = "bucket";
 	private static final Random RANDOM = new Random();
+
+	private static final BiFunction<String, String, Headers> headersFunction = (k, v) -> new RecordHeaders(new RecordHeader[]{new RecordHeader(k, v.getBytes(StandardCharsets.UTF_8))});
+
 
 	@BeforeEach
 	void setUp() {
@@ -58,11 +69,11 @@ class S3FilesReaderTest {
 	void testReadingBytesFromS3() throws IOException {
 		final AmazonS3 client = s3Client();
 		final Path dir = Files.createTempDirectory("s3FilesReaderTest");
-		givenSomeData(client, dir);
+		givenSomeDataWithKeys(client, dir);
 
 		List<String> results = whenTheRecordsAreRead(client, true, 3);
 
-		thenTheyAreFilteredAndInOrder(results);
+		thenTheyAreInOrder(results);
 	}
 
 	@Test
@@ -75,24 +86,24 @@ class S3FilesReaderTest {
 
 		List<String> results = whenTheRecordsAreRead(client, true, 10);
 
-		thenTheyAreFilteredAndInOrder(results);
+		thenTheyAreInOrder(results);
 	}
 
 	@Test
 	void testReadingBytesFromS3_withOffsets() throws IOException {
 		final AmazonS3 client = s3Client();
 		final Path dir = Files.createTempDirectory("s3FilesReaderTest");
-		givenSomeData(client, dir);
+		givenSomeDataWithKeys(client, dir);
 
 		List<String> results = whenTheRecordsAreRead(givenAReaderWithOffsets(client,
 			"prefix/2015-12-31/topic-00003-000000000001.gz", 5L, "00003"));
 
 		assertEquals(Arrays.asList(
-			"willbe=skipped5",
-			"willbe=skipped6",
-			"willbe=skipped7",
-			"willbe=skipped8",
-			"willbe=skipped9"
+			"willbe=skipped5[skipped header key5:skipped header value5]",
+			"willbe=skipped6[skipped header key6:skipped header value6]",
+			"willbe=skipped7[skipped header key7:skipped header value7]",
+			"willbe=skipped8[skipped header key8:skipped header value8]",
+			"willbe=skipped9[skipped header key9:skipped header value9]"
 		), results);
 	}
 
@@ -101,23 +112,17 @@ class S3FilesReaderTest {
 	void testReadingBytesFromS3_withOffsetsAtEndOfFile() throws IOException {
 		final AmazonS3 client = s3Client();
 		final Path dir = Files.createTempDirectory("s3FilesReaderTest");
-		givenSomeData(client, dir);
+		givenSomeDataWithKeys(client, dir);
 
 		// this file will be skipped
 		List<String> results = whenTheRecordsAreRead(givenAReaderWithOffsets(client,
 			"prefix/2015-12-30/topic-00003-000000000000.gz", 1L, "00003"));
 
-		assertEquals(Arrays.asList(
-			"willbe=skipped1",
-			"willbe=skipped2",
-			"willbe=skipped3",
-			"willbe=skipped4",
-			"willbe=skipped5",
-			"willbe=skipped6",
-			"willbe=skipped7",
-			"willbe=skipped8",
-			"willbe=skipped9"
-		), results);
+		assertEquals(
+			IntStream.range(1, 10)
+				.mapToObj(i -> String.format("willbe=skipped%d[skipped header key%d:skipped header value%d]", i, i, i))
+				.collect(toList()),
+			results);
 	}
 
 	S3FilesReader givenAReaderWithOffsets(AmazonS3 client, String marker, long nextOffset, final String partition) {
@@ -156,11 +161,11 @@ class S3FilesReaderTest {
 	void testReadingBytesFromS3_withoutKeys() throws IOException {
 		final AmazonS3 client = s3Client();
 		final Path dir = Files.createTempDirectory("s3FilesReaderTest");
-		givenSomeData(client, dir, false);
+		givenSomeDataWithoutKeys(client, dir);
 
 		List<String> results = whenTheRecordsAreRead(client, false);
 
-		theTheyAreInOrder(results);
+		theTheyAreInOrderWithoutKeys(results);
 	}
 
 	Converter givenACustomConverter() {
@@ -171,20 +176,20 @@ class S3FilesReaderTest {
 		return Configure.buildConverter(config, "converter", false, null);
 	}
 
-	void theTheyAreInOrder(List<String> results) {
+	void theTheyAreInOrderWithoutKeys(List<String> results) {
 		List<String> expected = Arrays.asList(
-			"value0-0",
-			"value1-0",
-			"value1-1"
+			"value0-0[header key 0-0:header value 0-0]",
+			"value1-0[header key 1-0:header value 1-0]",
+			"value1-1[header key 1-1:header value 1-1]"
 		);
 		assertEquals(expected, results);
 	}
 
-	private void thenTheyAreFilteredAndInOrder(List<String> results) {
+	private void thenTheyAreInOrder(List<String> results) {
 		List<String> expected = Arrays.asList(
-			"key0-0=value0-0",
-			"key1-0=value1-0",
-			"key1-1=value1-1"
+			"key0-0=value0-0[header key 0-0:header value 0-0]",
+			"key1-0=value1-0[header key 1-0:header value 1-0]",
+			"key1-1=value1-1[header key 1-1:header value 1-1]"
 		);
 		assertEquals(expected, results);
 	}
@@ -201,7 +206,13 @@ class S3FilesReaderTest {
 	private List<String> whenTheRecordsAreRead(S3FilesReader reader) {
 		List<String> results = new ArrayList<>();
 		for (S3SourceRecord record : reader) {
-			results.add((record.key() == null ? "" : new String(record.key()) + "=") + new String(record.value()));
+			String key = (record.key() == null ? "" : new String(record.key()) + "=");
+			String value = new String(record.value());
+			String headers = StreamSupport.stream(record.headers().spliterator(), false)
+				.map(h -> h.key() + ":" + (String) h.value())
+				.collect(Collectors.joining(","));
+
+			results.add(key + value + "[" + headers + "]");
 		}
 		return results;
 	}
@@ -215,15 +226,19 @@ class S3FilesReaderTest {
 		try (BlockGZIPFileWriter p0 = new BlockGZIPFileWriter("topic-00000", dir.toString() + "/prefix/2016-01-01", 0, 512);
 			 BlockGZIPFileWriter p1 = new BlockGZIPFileWriter("topic-00001", dir.toString() + "/prefix/2016-01-01", 0, 512);
 		) {
-			write(p0, "key0-0".getBytes(), "value0-0".getBytes(), includeKeys);
-			write(p1, "key1-0".getBytes(), "value1-0".getBytes(), includeKeys);
-			write(p1, "key1-1".getBytes(), "value1-1".getBytes(), includeKeys);
+			write(p0, "key0-0".getBytes(), "value0-0".getBytes(), headersFunction.apply("header key 0-0", "header value 0-0"), includeKeys);
+			write(p1, "key1-0".getBytes(), "value1-0".getBytes(), headersFunction.apply("header key 1-0", "header value 1-0"), includeKeys);
+			write(p1, "key1-1".getBytes(), "value1-1".getBytes(), headersFunction.apply("header key 1-1", "header value 1-1"), includeKeys);
 		}
 		uploadToS3(client, dir);
 	}
 
-	private void givenSomeData(AmazonS3 client, Path dir) throws IOException {
+	private void givenSomeDataWithKeys(AmazonS3 client, Path dir) throws IOException {
 		givenSomeData(client, dir, true);
+	}
+
+	private void givenSomeDataWithoutKeys(AmazonS3 client, Path dir) throws IOException {
+		givenSomeData(client, dir, false);
 	}
 
 	private void givenSomeData(AmazonS3 client, Path dir, boolean includeKeys) throws IOException {
@@ -236,16 +251,16 @@ class S3FilesReaderTest {
 			 BlockGZIPFileWriter writer2 = new BlockGZIPFileWriter("topic-00001", dir.toString() + "/prefix/2016-01-02", 0, 512);
 			 BlockGZIPFileWriter preWriter1 = new BlockGZIPFileWriter("topic-00003", dir.toString() + "/prefix/2015-12-30", 0, 512);
 		) {
-			write(preWriter1, "willbe".getBytes(), "skipped0".getBytes(), includeKeys);
+			write(preWriter1, "willbe".getBytes(), "skipped0".getBytes(), headersFunction.apply("skipped header key", "skipped header value"), includeKeys);
 
 			for (int i = 1; i < 10; i++) {
-				write(writer0, "willbe".getBytes(), ("skipped" + i).getBytes(), includeKeys);
+				write(writer0, "willbe".getBytes(), ("skipped" + i).getBytes(), headersFunction.apply("skipped header key" + i, "skipped header value" + i), includeKeys);
 			}
 
-			write(writer1, "key0-0".getBytes(), "value0-0".getBytes(), includeKeys);
+			write(writer1, "key0-0".getBytes(), "value0-0".getBytes(), headersFunction.apply("header key 0-0", "header value 0-0"), includeKeys);
 
-			write(writer2, "key1-0".getBytes(), "value1-0".getBytes(), includeKeys);
-			write(writer2, "key1-1".getBytes(), "value1-1".getBytes(), includeKeys);
+			write(writer2, "key1-0".getBytes(), "value1-0".getBytes(), headersFunction.apply("header key 1-0", "header value 1-0"), includeKeys);
+			write(writer2, "key1-1".getBytes(), "value1-1".getBytes(), headersFunction.apply("header key 1-1", "header value 1-1"), includeKeys);
 		}
 
 		uploadToS3(client, dir);
@@ -265,8 +280,10 @@ class S3FilesReaderTest {
 		});
 	}
 
-	private void write(BlockGZIPFileWriter writer, byte[] key, byte[] value, boolean includeKeys) throws IOException {
-		writer.write(new ByteLengthFormat(includeKeys).newWriter().writeBatch(Stream.of(new ProducerRecord<>("", key, value))).collect(toList()), 1);
+	private void write(BlockGZIPFileWriter writer, byte[] key, byte[] value, Headers headers, boolean includeKeys) throws IOException {
+		writer.write(new ByteLengthFormat(includeKeys).newWriter().writeBatch(Stream.of(
+			new ProducerRecord<>("", 0, key, value, headers)
+		)).collect(toList()), 1);
 	}
 
 	private AmazonS3 s3Client() {
