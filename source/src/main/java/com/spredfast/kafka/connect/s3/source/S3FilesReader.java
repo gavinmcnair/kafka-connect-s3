@@ -297,11 +297,10 @@ public class S3FilesReader implements Iterable<S3SourceRecord> {
 				}
 
 				ConnectHeaders connectHeaders = new ConnectHeaders();
-				// TODO tidy this up
-				for (Header h : commonHeaders) {
-					String value = h.value() == null ? null : new String(h.value());
+				for (Header header : commonHeaders) {
+					String value = header.value() == null ? null : new String(header.value());
 					Schema schema = value == null ? Schema.OPTIONAL_STRING_SCHEMA : Schema.STRING_SCHEMA;
-					connectHeaders.add(h.key(), new SchemaAndValue(schema, value));
+					connectHeaders.add(header.key(), new SchemaAndValue(schema, value));
 				}
 				return connectHeaders;
 			}
