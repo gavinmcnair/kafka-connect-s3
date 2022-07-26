@@ -12,8 +12,9 @@ import org.testcontainers.utility.DockerImageName;
 public class FakeS3 {
 
 	@Container
-	public GenericContainer s3 = new GenericContainer(DockerImageName.parse("lphoward/fake-s3"))
-		.withExposedPorts(4569);
+	public GenericContainer s3 = new GenericContainer(DockerImageName.parse("adobe/s3mock"))
+		.withExposedPorts(9090);
+
 
 	public void start() {
 		s3.start();
