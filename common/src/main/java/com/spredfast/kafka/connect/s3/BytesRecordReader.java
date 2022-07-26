@@ -18,6 +18,9 @@ import java.nio.ByteBuffer;
 import java.util.ArrayList;
 import java.util.List;
 
+import static com.spredfast.kafka.connect.s3.Constants.HEADER_MARKER;
+import static com.spredfast.kafka.connect.s3.Constants.HEADER_MARKER_SIZE;
+import static com.spredfast.kafka.connect.s3.Constants.LENGTH_FIELD_SIZE;
 import static org.apache.kafka.clients.consumer.ConsumerRecord.NO_TIMESTAMP;
 import static org.apache.kafka.clients.consumer.ConsumerRecord.NULL_CHECKSUM;
 import static org.apache.kafka.clients.consumer.ConsumerRecord.NULL_SIZE;
@@ -27,7 +30,7 @@ import static org.apache.kafka.clients.consumer.ConsumerRecord.NULL_SIZE;
  */
 public class BytesRecordReader implements RecordReader {
 	private static final Gson GSON = new Gson();
-	private final ByteBuffer lenBuffer = ByteBuffer.allocate(4);
+	private final ByteBuffer lenBuffer = ByteBuffer.allocate(LENGTH_FIELD_SIZE);
 
 	private final boolean includesKeys;
 

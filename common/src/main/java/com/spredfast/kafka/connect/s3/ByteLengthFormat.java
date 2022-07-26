@@ -10,18 +10,16 @@ import java.nio.charset.StandardCharsets;
 import java.util.Map;
 import java.util.Optional;
 
+import static com.spredfast.kafka.connect.s3.Constants.HEADER_MARKER;
+import static com.spredfast.kafka.connect.s3.Constants.HEADER_MARKER_SIZE;
+import static com.spredfast.kafka.connect.s3.Constants.LENGTH_FIELD_SIZE;
+import static com.spredfast.kafka.connect.s3.Constants.NO_BYTES;
+
 /**
  * Encodes raw bytes, prefixed by a 4 byte, big-endian integer
  * indicating the length of the byte sequence.
  */
 public class ByteLengthFormat implements S3RecordFormat, Configurable {
-
-	private static final int LEN_SIZE = 4;
-	private static final byte[] NO_BYTES = {};
-
-	// TODO decide on value and size of header marker
-	private static final int HEADER_MARKER = -10;
-	private static final int HEADER_MARKER_SIZE = 1;
 
 	private static final Gson GSON = new Gson();
 
@@ -51,9 +49,9 @@ public class ByteLengthFormat implements S3RecordFormat, Configurable {
 		byte[] value = Optional.ofNullable(r.value()).orElse(NO_BYTES);
 		Optional<byte[]> headers = serialiseHeaders(r.headers());
 
-		int keyBlockLength = includesKeys.map(t -> LEN_SIZE + key.length).orElse(0);
-		int valueBlockLength = LEN_SIZE + value.length;
-		int headerBlockLength = headers.map(t -> HEADER_MARKER_SIZE + LEN_SIZE + t.length).orElse(0);
+		int keyBlockLength = includesKeys.map(t -> LENGTH_FIELD_SIZE + key.length).orElse(0);
+		int valueBlockLength = LENGTH_FIELD_SIZE + value.length;
+		int headerBlockLength = headers.map(t -> HEADER_MARKER_SIZE + LENGTH_FIELD_SIZE + t.length).orElse(0);
 		byte[] result = new byte[keyBlockLength + valueBlockLength + headerBlockLength];
 		ByteBuffer wrapped = ByteBuffer.wrap(result);
 
@@ -66,7 +64,7 @@ public class ByteLengthFormat implements S3RecordFormat, Configurable {
 		wrapped.put(value);
 
 		if (headers.isPresent()) {
-			wrapped.put((byte) HEADER_MARKER);
+			wrapped.put(HEADER_MARKER);
 			wrapped.putInt(headers.get().length);
 			wrapped.put(headers.get());
 		}
