@@ -16,7 +16,6 @@ import org.apache.kafka.connect.data.SchemaAndValue;
 import org.apache.kafka.connect.storage.Converter;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
-import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.Test;
 import org.testcontainers.shaded.com.google.common.collect.ImmutableMap;
 
@@ -79,7 +78,6 @@ class S3FilesReaderTest {
 		thenTheyAreFilteredAndInOrder(results);
 	}
 
-	@Disabled("Not reading all the records. The internal workings are too disgusting to understand why.")
 	@Test
 	void testReadingBytesFromS3_withOffsets() throws IOException {
 		final AmazonS3 client = s3Client();
@@ -99,7 +97,6 @@ class S3FilesReaderTest {
 	}
 
 
-	@Disabled("Not reading all the records. The internal workings are too disgusting to understand why.")
 	@Test
 	void testReadingBytesFromS3_withOffsetsAtEndOfFile() throws IOException {
 		final AmazonS3 client = s3Client();
@@ -155,7 +152,6 @@ class S3FilesReaderTest {
 		}
 	}
 
-	@Disabled("Not reading all the records. The internal workings are too disgusting to understand why.")
 	@Test
 	void testReadingBytesFromS3_withoutKeys() throws IOException {
 		final AmazonS3 client = s3Client();
