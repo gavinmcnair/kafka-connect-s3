@@ -12,11 +12,12 @@ import org.apache.kafka.connect.errors.DataException;
 
 import java.io.BufferedInputStream;
 import java.io.IOException;
-import java.io.InputStream;
 import java.lang.reflect.Type;
 import java.nio.ByteBuffer;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.List;
+import java.util.Optional;
 
 import static com.spredfast.kafka.connect.s3.Constants.HEADER_MARKER;
 import static com.spredfast.kafka.connect.s3.Constants.HEADER_MARKER_SIZE;
@@ -97,23 +98,16 @@ public class BytesRecordReader implements RecordReader {
 			(long) NULL_CHECKSUM, NULL_SIZE, NULL_SIZE, key, value, headers);
 	}
 
-	private boolean isNextByteTheHeaderMarker(final ReadContext context) throws IOException {
-		if (hasNextByte(context.data)) {
-			final byte[] headerMarker = readBytes(1, context);
-			return headerMarker.length == 1 && headerMarker[0] == -10;
-		}
-		return false;
-	}
-
 	private Headers readHeaders(final ReadContext context) throws IOException {
-		// Mark our current position, so we can move back if there is no header
-		context.data.mark(1);
+		boolean isTheHeaderMarkerNext = peek(context, HEADER_MARKER_SIZE)
+			.filter(next -> Arrays.equals(next, new byte[]{HEADER_MARKER}))
+			.isPresent();
 
-		if (!isNextByteTheHeaderMarker(context)) {
-			// Reset stream to before the non-existent header
-			context.data.reset();
+		if (!isTheHeaderMarkerNext) {
 			return new RecordHeaders();
 		}
+
+		skip(context, HEADER_MARKER_SIZE);
 
 		int headerSize = readValueLen(context);
 		byte[] headerBlock = readBytes(headerSize, context);
@@ -160,14 +154,17 @@ public class BytesRecordReader implements RecordReader {
 		return lenBuffer.getInt();
 	}
 
-	private boolean hasNextByte(InputStream data) throws IOException {
-		data.mark(1);
-		ByteBuffer peekBuffer = ByteBuffer.allocate(1);
-		int read = data.read(peekBuffer.array(), 0, 1);
-		data.reset();
-		return read != -1;
+	private Optional<byte[]> peek(ReadContext context, int bytes) throws IOException {
+		context.data.mark(bytes);
+		ByteBuffer peekBuffer = ByteBuffer.allocate(bytes);
+		int read = context.data.read(peekBuffer.array(), 0, bytes);
+		context.data.reset();
+		return read == -1 ? Optional.empty() : Optional.of(peekBuffer.array());
 	}
 
+	private long skip(ReadContext context, int bytes) throws IOException {
+		return context.data.skip(bytes);
+	}
 
 	protected ConsumerRecord<byte[], byte[]> die(ReadContext context) {
 		throw new DataException(String.format("Corrupt record at %s-%d:%d", context.topic, context.partition, context.offset));
