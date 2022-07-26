@@ -42,7 +42,7 @@ public class BytesRecordReader implements RecordReader {
 		this.includesKeys = includesKeys;
 	}
 
-	public class ReadContext {
+	public static class ReadContext {
 		String topic;
 		int partition;
 		long offset;
@@ -68,9 +68,6 @@ public class BytesRecordReader implements RecordReader {
 	}
 
 	public ConsumerRecord<byte[], byte[]> read(final ReadContext context) throws IOException {
-		if (!context.data.markSupported()) {
-			throw new RuntimeException("Reader is not mark supported"); // TODO improve exception type and message
-		}
 		final byte[] key;
 		final int valSize;
 		if (includesKeys) {
