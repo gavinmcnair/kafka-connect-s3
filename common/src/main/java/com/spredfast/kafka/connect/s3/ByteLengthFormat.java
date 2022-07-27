@@ -18,6 +18,17 @@ import static com.spredfast.kafka.connect.s3.Constants.NO_BYTES;
 /**
  * Encodes raw bytes, prefixed by a 4 byte, big-endian integer
  * indicating the length of the byte sequence.
+ * <p>
+ * If the record contains headers then the value block is followed by:
+ * - a single byte of value 0xF6
+ * - a 4 byte, big-endian integer indicating the length of the headers' byte sequence
+ * - the byte array representation of the headers encoded os JSON
+ * <p>
+ * The value of the header marker (0xF6) is arbitrary.
+ * It just needs to be a value that would not normally be at the start of the next record's 4 byte integer -- i.e. a negative value.
+ * <p>
+ * A more concise headers encoding was considered, such as the variable length encoding used for the message key and value, but care would be needed to differentiate nulls and empty strings.
+ * JSON is easy and storage is cheap.
  */
 public class ByteLengthFormat implements S3RecordFormat, Configurable {
 
