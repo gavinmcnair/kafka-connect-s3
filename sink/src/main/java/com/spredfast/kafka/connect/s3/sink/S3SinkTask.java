@@ -1,28 +1,5 @@
 package com.spredfast.kafka.connect.s3.sink;
 
-import static java.util.Optional.ofNullable;
-import static java.util.stream.Collectors.groupingBy;
-import static java.util.stream.Collectors.toList;
-
-import java.io.IOException;
-import java.util.Arrays;
-import java.util.Collection;
-import java.util.HashMap;
-import java.util.LinkedHashMap;
-import java.util.Map;
-import java.util.Optional;
-
-import org.apache.kafka.clients.consumer.OffsetAndMetadata;
-import org.apache.kafka.clients.producer.ProducerRecord;
-import org.apache.kafka.common.TopicPartition;
-import org.apache.kafka.connect.errors.ConnectException;
-import org.apache.kafka.connect.errors.IllegalWorkerStateException;
-import org.apache.kafka.connect.errors.RetriableException;
-import org.apache.kafka.connect.sink.SinkRecord;
-import org.apache.kafka.connect.sink.SinkTask;
-import org.apache.kafka.connect.storage.Converter;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 import com.amazonaws.services.s3.AmazonS3;
 import com.spredfast.kafka.connect.s3.AlreadyBytesConverter;
 import com.spredfast.kafka.connect.s3.Configure;
@@ -31,6 +8,35 @@ import com.spredfast.kafka.connect.s3.Metrics;
 import com.spredfast.kafka.connect.s3.S3;
 import com.spredfast.kafka.connect.s3.S3RecordFormat;
 import com.spredfast.kafka.connect.s3.S3RecordsWriter;
+import org.apache.kafka.clients.consumer.OffsetAndMetadata;
+import org.apache.kafka.clients.producer.ProducerRecord;
+import org.apache.kafka.common.TopicPartition;
+import org.apache.kafka.common.header.internals.RecordHeader;
+import org.apache.kafka.common.header.internals.RecordHeaders;
+import org.apache.kafka.connect.errors.ConnectException;
+import org.apache.kafka.connect.errors.IllegalWorkerStateException;
+import org.apache.kafka.connect.errors.RetriableException;
+import org.apache.kafka.connect.header.Headers;
+import org.apache.kafka.connect.sink.SinkRecord;
+import org.apache.kafka.connect.sink.SinkTask;
+import org.apache.kafka.connect.storage.Converter;
+import org.apache.kafka.connect.storage.HeaderConverter;
+import org.apache.kafka.connect.storage.SimpleHeaderConverter;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
+import java.io.IOException;
+import java.util.Arrays;
+import java.util.Collection;
+import java.util.HashMap;
+import java.util.LinkedHashMap;
+import java.util.Map;
+import java.util.Optional;
+import java.util.stream.StreamSupport;
+
+import static java.util.Optional.ofNullable;
+import static java.util.stream.Collectors.groupingBy;
+import static java.util.stream.Collectors.toList;
 
 
 public class S3SinkTask extends SinkTask {
@@ -48,6 +54,8 @@ public class S3SinkTask extends SinkTask {
 	private Optional<Converter> keyConverter;
 
 	private Converter valueConverter;
+
+	private HeaderConverter headerConverter;
 
 	private S3RecordFormat recordFormat;
 
@@ -71,6 +79,7 @@ public class S3SinkTask extends SinkTask {
 
 		keyConverter = ofNullable(Configure.buildConverter(config, "key.converter", true, null));
 		valueConverter = Configure.buildConverter(config, "value.converter", false, AlreadyBytesConverter.class);
+		headerConverter = new SimpleHeaderConverter();
 
 		String bucket = configGet("s3.bucket")
 			.filter(s -> !s.isEmpty())
@@ -188,14 +197,30 @@ public class S3SinkTask extends SinkTask {
 		private void writeAll(Collection<SinkRecord> records) {
 			metrics.hist(records.size(), "putSize", tags);
 			try (Metrics.StopTimer ignored = metrics.time("writeAll", tags)) {
-				writer.write(format.writeBatch(records.stream().map(record -> new ProducerRecord<>(record.topic(), record.kafkaPartition(),
-					keyConverter.map(c -> c.fromConnectData(record.topic(), record.keySchema(), record.key()))
-						.orElse(null),
-					valueConverter.fromConnectData(record.topic(), record.valueSchema(), record.value())
-				))).collect(toList()), records.size());
+				writer.write(format.writeBatch(records.stream().map(this::toProducerRecord)).collect(toList()), records.size());
 			} catch (IOException e) {
 				throw new RetriableException("Failed to write to buffer", e);
 			}
+		}
+
+		private ProducerRecord<byte[], byte[]> toProducerRecord(final SinkRecord record) {
+			return new ProducerRecord<>(
+				record.topic(), record.kafkaPartition(),
+				keyConverter.map(c -> c.fromConnectData(record.topic(), record.keySchema(), record.key())).orElse(null),
+				valueConverter.fromConnectData(record.topic(), record.valueSchema(), record.value()),
+				toCommonHeaders(record)
+			);
+		}
+
+		private org.apache.kafka.common.header.Headers toCommonHeaders(final SinkRecord record) {
+			Headers connectHeaders = record.headers();
+			if (connectHeaders == null) {
+				return null;
+			}
+
+			return StreamSupport.stream(connectHeaders.spliterator(), false)
+				.map(h -> new RecordHeader(h.key(), headerConverter.fromConnectHeader(record.topic(), h.key(), h.schema(), h.value())))
+				.collect(RecordHeaders::new, RecordHeaders::add, (rhs1, rhs2) -> rhs2.forEach(h -> rhs1.add(h.key(), h.value())));
 		}
 
 		public String getDataFilePath() {

@@ -1,49 +1,105 @@
 package com.spredfast.kafka.connect.s3;
 
-import static java.util.stream.Collectors.toMap;
-import static org.junit.Assert.assertEquals;
+import org.apache.kafka.clients.consumer.ConsumerRecord;
+import org.apache.kafka.clients.producer.ProducerRecord;
+import org.apache.kafka.common.header.Headers;
 
 import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.Base64;
 import java.util.List;
-import java.util.Map;
+import java.util.Objects;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
-import org.apache.kafka.clients.consumer.ConsumerRecord;
-import org.apache.kafka.clients.producer.ProducerRecord;
-import com.google.common.collect.ImmutableMap;
+import static org.junit.Assert.assertEquals;
 
 public class FormatTests {
 
-	public static void roundTrip_singlePartition_fromZero_withNullKeys(S3RecordFormat format, List<String> values) throws IOException {
+	public static class Record {
+		String key;
+		String value;
+		Headers headers;
+
+		public Record(final String key, final String value, final Headers headers) {
+			this.key = key;
+			this.value = value;
+			this.headers = headers;
+		}
+
+		public static Record keysAndValueOnly(final String key, final String value) {
+			return new Record(key, value, null);
+		}
+
+		public static Record valueOnly(final String value) {
+			return new Record(null, value, null);
+		}
+
+		@Override
+		public boolean equals(final Object o) {
+			if (this == o) return true;
+			if (o == null || getClass() != o.getClass()) return false;
+			final Record record = (Record) o;
+			return Objects.equals(key, record.key) && Objects.equals(value, record.value) && Objects.equals(headers, record.headers);
+		}
+
+		@Override
+		public int hashCode() {
+			return Objects.hash(key, value, headers);
+		}
+
+		@Override
+		public String toString() {
+			return "Record{" +
+				"key='" + key + '\'' +
+				", value='" + value + '\'' +
+				", headers=" + headers +
+				'}';
+		}
+	}
+
+	public static void roundTrip_singlePartition_fromZero_withNullKeys(S3RecordFormat format, List<Record> values) throws IOException {
 		roundTrip_singlePartition_fromZero_withNullKeys(format, values, 0L);
 	}
 
 	// don't currently have a format that cares about start offset, so overload isn't used
-	public static void roundTrip_singlePartition_fromZero_withNullKeys(S3RecordFormat format, List<String> values, long startOffset) throws IOException {
-		Stream<ProducerRecord<byte[], byte[]>> records = values.stream().map(v ->
+	public static void roundTrip_singlePartition_fromZero_withNullKeys(S3RecordFormat format, List<Record> values, long startOffset) throws IOException {
+		Stream<ProducerRecord<byte[], byte[]>> records = values.stream().map(r -> r.value).map(v ->
 			new ProducerRecord<>("topic", 0, null, v.getBytes())
 		);
 
-		List<String> results = roundTrip(format, startOffset, records).stream().map(r -> new String(r.value())).collect(Collectors.toList());
+		List<Record> results = roundTrip(format, startOffset, records).stream().map(r -> Record.valueOnly(new String(r.value()))).collect(Collectors.toList());
 
 		assertEquals(values, results);
 	}
 
-	public static void roundTrip_singlePartition_fromZero_withKeys(S3RecordFormat format, Map<String, String> values, long startOffset) throws IOException {
-		Stream<ProducerRecord<byte[], byte[]>> records = values.entrySet().stream().map(entry ->
-			new ProducerRecord<>("topic", 0, entry.getKey().getBytes(), entry.getValue().getBytes())
+	public static void roundTrip_singlePartition_fromZero_withKeys(S3RecordFormat format, List<Record> records, long startOffset) throws IOException {
+		Stream<ProducerRecord<byte[], byte[]>> producerRecords = records.stream().map(entry ->
+			new ProducerRecord<>("topic", 0, entry.key.getBytes(), entry.value.getBytes())
 		);
 
-		Map<String, String> results = roundTrip(format, startOffset, records).stream().collect(toMap(
-			r -> new String(r.key()),
-			r -> new String(r.value())
-		));
+		List<Record> results = roundTrip(format, startOffset, producerRecords).stream().map(r -> Record.keysAndValueOnly(new String(r.key()), new String(r.value()))).collect(Collectors.toList());
 
-		assertEquals(values, results);
+		assertEquals(records, results);
+	}
+
+	public static void roundTrip_singlePartition_fromZero_withKeysAndHeaders(S3RecordFormat format, List<Record> records, long startOffset) throws IOException {
+		Stream<ProducerRecord<byte[], byte[]>> producerRecords = records.stream().map(entry ->
+			new ProducerRecord<>("topic", 0, entry.key.getBytes(), entry.value.getBytes(), entry.headers)
+		);
+
+		List<Record> results = roundTrip(format, startOffset, producerRecords).stream().map(r -> new Record(new String(r.key()), new String(r.value()), r.headers())).collect(Collectors.toList());
+
+		assertEquals(records, results);
+	}
+
+	public static void assertBytesAreEqual(byte[] expected, byte[] actual) {
+		if (!Arrays.equals(expected, actual)) {
+			assertEquals(Base64.getEncoder().encodeToString(expected), Base64.getEncoder().encodeToString(actual));
+		}
 	}
 
 	private static List<ConsumerRecord<byte[], byte[]>> roundTrip(S3RecordFormat format, long startOffset, Stream<ProducerRecord<byte[], byte[]>> records) throws IOException {

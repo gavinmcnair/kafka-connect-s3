@@ -4,6 +4,7 @@ dependencies {
 	api project(':api')
 	api group: 'com.amazonaws', name: 'aws-java-sdk-s3', version: '1.11.860'
 	api group: 'com.amazonaws', name: 'aws-java-sdk-sts', version: '1.11.860'
+	implementation 'com.google.code.gson:gson:2.9.0'
 
 	testImplementation group: 'junit', name: 'junit', version: '4.13'
 	testImplementation group: 'org.mockito', name: 'mockito-all', version: '1.9.5'
