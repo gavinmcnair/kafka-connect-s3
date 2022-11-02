@@ -2,7 +2,7 @@ version: 2.1
 jobs:
   upload:
     docker:
-    - image: circleci/openjdk:8-jdk-node
+    - image: circleci/openjdk:11
     steps:
     - checkout
     - run:
@@ -53,4 +53,3 @@ workflows:
             ignore: /.*/
           tags:
             only: /v[0-9]+\.[0-9]+\.[0-9]+/
-
