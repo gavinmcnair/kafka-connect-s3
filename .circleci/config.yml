@@ -22,7 +22,7 @@ jobs:
       - setup_remote_docker
       - run:
           name: Run Tests
-          command: ./gradlew test
+          command: ./gradlew test --debug
       - run:
           name: Save test results
           command: |
