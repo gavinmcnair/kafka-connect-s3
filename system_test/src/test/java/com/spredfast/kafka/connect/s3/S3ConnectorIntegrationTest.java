@@ -193,7 +193,13 @@ public class S3ConnectorIntegrationTest {
 
 		Map<String, String> sinkConfig = givenSinkConfig(sinkTopic);
 		AmazonS3 s3 = givenS3Client(sinkConfig);
-		s3.createBucket(S3_BUCKET);
+		private static final Logger log = LoggerFactory.getLogger(S3SinkTask.class);
+		try {
+			s3.createBucket(S3_BUCKET);
+		}
+		catch (Exception e) {
+			log.error("TRYCATCH ERROR", e);
+		}
 		whenTheConnectorIsStarted(sinkConfig);
 
 		String sourceTopic = kafka.createUniqueTopic("bin-source-replay-", 2);
