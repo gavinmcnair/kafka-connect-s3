@@ -40,7 +40,6 @@ import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
-import org.slf4j.LoggerFactory;
 
 import java.io.File;
 import java.io.IOException;
@@ -204,7 +203,6 @@ public class S3ConnectorIntegrationTest {
 
 		Map<String, String> sinkConfig = givenSinkConfig(sinkTopic);
 		AmazonS3 s3 = givenS3Client(sinkConfig);
-		Logger logger = Logger.getLogger(S3ConnectorIntegrationTest.class);
 		s3.createBucket(S3_BUCKET);
 		whenTheConnectorIsStarted(sinkConfig);
 
