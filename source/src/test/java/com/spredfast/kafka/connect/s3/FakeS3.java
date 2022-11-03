@@ -5,16 +5,12 @@ import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
 import org.testcontainers.utility.DockerImageName;
 
-/**
- * Created by noah on 10/20/16.
- */
 @Testcontainers
 public class FakeS3 {
 
 	@Container
 	public GenericContainer s3 = new GenericContainer(DockerImageName.parse("adobe/s3mock"))
 		.withExposedPorts(9090);
-
 
 	public void start() {
 		s3.start();

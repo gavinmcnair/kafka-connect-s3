@@ -1,6 +1,26 @@
 package com.spredfast.kafka.connect.s3.source;
 
-import static java.util.stream.Collectors.toList;
+import com.amazonaws.AmazonClientException;
+import com.amazonaws.services.s3.AmazonS3;
+import com.amazonaws.services.s3.model.GetObjectRequest;
+import com.amazonaws.services.s3.model.ListObjectsRequest;
+import com.amazonaws.services.s3.model.ObjectListing;
+import com.amazonaws.services.s3.model.S3Object;
+import com.amazonaws.services.s3.model.S3ObjectSummary;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.ObjectReader;
+import com.spredfast.kafka.connect.s3.LazyString;
+import com.spredfast.kafka.connect.s3.S3RecordsReader;
+import com.spredfast.kafka.connect.s3.json.ChunkDescriptor;
+import com.spredfast.kafka.connect.s3.json.ChunksIndex;
+import org.apache.kafka.clients.consumer.ConsumerRecord;
+import org.apache.kafka.common.header.Header;
+import org.apache.kafka.connect.data.Schema;
+import org.apache.kafka.connect.data.SchemaAndValue;
+import org.apache.kafka.connect.header.ConnectHeaders;
+import org.apache.kafka.connect.header.Headers;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.io.IOException;
 import java.io.InputStream;
@@ -18,22 +38,7 @@ import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import java.util.zip.GZIPInputStream;
 
-import org.apache.kafka.clients.consumer.ConsumerRecord;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
-import com.amazonaws.AmazonClientException;
-import com.amazonaws.services.s3.AmazonS3;
-import com.amazonaws.services.s3.model.GetObjectRequest;
-import com.amazonaws.services.s3.model.ListObjectsRequest;
-import com.amazonaws.services.s3.model.ObjectListing;
-import com.amazonaws.services.s3.model.S3Object;
-import com.amazonaws.services.s3.model.S3ObjectSummary;
-import com.fasterxml.jackson.databind.ObjectMapper;
-import com.fasterxml.jackson.databind.ObjectReader;
-import com.spredfast.kafka.connect.s3.LazyString;
-import com.spredfast.kafka.connect.s3.S3RecordsReader;
-import com.spredfast.kafka.connect.s3.json.ChunkDescriptor;
-import com.spredfast.kafka.connect.s3.json.ChunksIndex;
+import static java.util.stream.Collectors.toList;
 
 /**
  * Helpers for reading records out of S3. Not thread safe.
@@ -159,7 +164,7 @@ public class S3FilesReader implements Iterable<S3SourceRecord> {
 					List<S3ObjectSummary> chunks = new ArrayList<>(objectListing.getObjectSummaries().size() / 2);
 					for (S3ObjectSummary chunk : objectListing.getObjectSummaries()) {
 						if (DATA_SUFFIX.matcher(chunk.getKey()).find() && parseKeyUnchecked(chunk.getKey(),
-								(t, p, o) -> config.partitionFilter.matches(t, p))) {
+							(t, p, o) -> config.partitionFilter.matches(t, p))) {
 							S3Offset offset = offset(chunk);
 							if (offset != null) {
 								// if our offset for this partition is beyond this chunk, ignore it
@@ -191,7 +196,7 @@ public class S3FilesReader implements Iterable<S3SourceRecord> {
 						S3RecordsReader reader = makeReader.get();
 						InputStream content = getContent(s3Client.getObject(config.bucket, currentKey));
 						iterator = parseKey(currentKey, (topic, partition, startOffset) -> {
-							reader.init(topic,partition, content, startOffset);
+							reader.init(topic, partition, content, startOffset);
 							return reader.readAll(topic, partition, content, startOffset);
 						});
 					}
@@ -281,9 +286,25 @@ public class S3FilesReader implements Iterable<S3SourceRecord> {
 					record.topic(),
 					record.partition(),
 					record.key(),
-					record.value()
+					record.value(),
+					toConnectHeaders(record.headers())
 				);
 			}
+
+			private Headers toConnectHeaders(final org.apache.kafka.common.header.Headers commonHeaders) {
+				if (commonHeaders == null) {
+					return null;
+				}
+
+				ConnectHeaders connectHeaders = new ConnectHeaders();
+				for (Header header : commonHeaders) {
+					String value = header.value() == null ? null : new String(header.value());
+					Schema schema = value == null ? Schema.OPTIONAL_STRING_SCHEMA : Schema.STRING_SCHEMA;
+					connectHeaders.add(header.key(), new SchemaAndValue(schema, value));
+				}
+				return connectHeaders;
+			}
+
 
 			@Override
 			public void remove() {

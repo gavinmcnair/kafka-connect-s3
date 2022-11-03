@@ -1,9 +1,16 @@
 description = "Kafka Connect Source that reads from S3"
 
 dependencies {
-	compile project(':common')
+	api project(':common')
 
-	testCompile project(':sink')
-    testCompile group: 'junit', name: 'junit', version: '4.12'
-    testCompile group: 'org.mockito', name: 'mockito-all', version: '1.9.5'
+	testImplementation project(':sink')
+	testImplementation "org.junit.jupiter:junit-jupiter:5.8.2"
+	testImplementation "org.testcontainers:testcontainers:1.17.3"
+	testImplementation "org.testcontainers:localstack:1.17.3"
+	testImplementation "org.testcontainers:junit-jupiter:1.17.3"
+	testImplementation group: 'org.mockito', name: 'mockito-all', version: '1.9.5'
+}
+
+test {
+	useJUnitPlatform()
 }
