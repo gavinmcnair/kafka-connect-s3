@@ -38,6 +38,7 @@ import org.apache.log4j.PatternLayout;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeAll;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
 import java.io.File;
@@ -79,6 +80,8 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 public class S3ConnectorIntegrationTest {
 
 	private static final String S3_BUCKET = "connect-system-test";
+	private static final String S3_BUCKET2 = "connect-system-test2";
+	private static final String S3_BUCKET3 = "connect-system-test3";
 	private static final String S3_PREFIX = "binsystest";
 	private static KafkaIntegrationTests.Kafka kafka;
 	private static KafkaIntegrationTests.KafkaConnect connect;
@@ -114,11 +117,18 @@ public class S3ConnectorIntegrationTest {
 		tryClose(() -> s3.close());
 	}
 
+	@BeforeEach
+	public void setup() {
+		s3 = new FakeS3();
+		s3.start();
+	}
+
 	@AfterEach
 	public void cleanup() {
 		// stop all the connectors
 		connect.herder().connectors((e, connectors) ->
 			connectors.forEach(this::whenTheSinkIsStopped));
+		tryClose(() -> s3.close());
 	}
 
 	@Test
