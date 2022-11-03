@@ -3,13 +3,13 @@ buildscript {
 		jcenter()
 	}
 	dependencies {
-		classpath 'com.github.jengelman.gradle.plugins:shadow:1.2.3'
-		classpath "io.codearte.gradle.nexus:gradle-nexus-staging-plugin:0.21.0"
+		classpath 'com.github.jengelman.gradle.plugins:shadow:5.2.0'
+		classpath "io.codearte.gradle.nexus:gradle-nexus-staging-plugin:0.22.0"
 	}
 }
 
 plugins {
-	id 'com.palantir.git-version' version '0.5.2'
+	id 'com.palantir.git-version' version '0.12.3'
 }
 
 apply plugin: 'java'
@@ -18,19 +18,18 @@ apply plugin: 'io.codearte.nexus-staging'
 description = "kafka-connect-s3"
 
 allprojects  {
-    apply plugin: 'maven'
     apply plugin: 'idea'
+	apply plugin: 'java-library'
 
     group = 'com.spredfast.kafka.connect.s3'
-	// circle only builds tags, so don't worry if it thinks it is dirty and strip the leading v
-	version = versionDetails().lastTag.replaceAll(/^v/,'').replaceAll(/\.dirty$/, '')
+	version = '1.0'
 
 	apply plugin: 'java'
-	sourceCompatibility = 1.8
-	targetCompatibility = 1.8
+	sourceCompatibility = 17
+	targetCompatibility = 17
 
 	repositories {
-		maven { url "https://repo.maven.apache.org/maven2" }
+		mavenCentral()
 	}
 }
 
@@ -40,8 +39,8 @@ apply plugin: "com.github.johnrengelman.shadow"
 shadowJar {
 	dependencies {
 		// provided in the connect classpath
-		exclude(dependency('org.apache.kafka:connect-api:0.10.1.0'))
-		exclude(dependency('org.apache.kafka:kafka-clients:0.10.1.0'))
+		exclude(dependency('org.apache.kafka:connect-api:2.4.1'))
+		exclude(dependency('org.apache.kafka:kafka-clients:2.4.1'))
 		exclude(dependency('net.jpountz.lz4:.*:.*'))
 		exclude(dependency('org.xerial.snappy:.*:.*'))
 		exclude(dependency('org.slf4j:.*:.*'))
@@ -56,8 +55,8 @@ shadowJar {
 }
 
 dependencies {
-	compile project(':sink')
-	compile project(':source')
+	implementation project(':sink')
+	implementation project(':source')
 }
 
 
@@ -85,4 +84,15 @@ ext {
 	pomDesc = 'S3 Source and Sink Connectors for Kafka Connect'
 }
 
-apply from: 'upload.gradle'
+test {
+	testLogging {
+		events "passed", "skipped", "failed"
+
+		showExceptions true
+		exceptionFormat "full"
+		showCauses true
+		showStackTraces true
+
+		showStandardStreams = false
+	}
+}

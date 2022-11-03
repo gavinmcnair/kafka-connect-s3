@@ -1,15 +1,18 @@
 package com.spredfast.kafka.connect.s3;
 
-import static java.util.stream.Collectors.toList;
+import com.google.gson.Gson;
+import org.apache.kafka.clients.producer.ProducerRecord;
+import org.apache.kafka.common.Configurable;
+import org.apache.kafka.common.header.Headers;
 
 import java.nio.charset.Charset;
+import java.nio.charset.StandardCharsets;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.stream.Stream;
 
-import org.apache.kafka.clients.producer.ProducerRecord;
-import org.apache.kafka.common.Configurable;
+import static java.util.stream.Collectors.toList;
 
 /**
  * Reads/writes records to/from a delimited, encoded string.
@@ -17,10 +20,13 @@ import org.apache.kafka.common.Configurable;
  */
 public class TrailingDelimiterFormat implements S3RecordFormat, Configurable {
 
-	public static final Charset DEFAULT_ENCODING = Charset.forName("UTF-8");
+	public static final Charset DEFAULT_ENCODING = StandardCharsets.UTF_8;
 	public static final String DEFAULT_DELIMITER = "\n";
 	private static final byte[] NO_BYTES = {};
+	private static final Gson GSON = new Gson();
+	private static final String HEADER_DELIMITER = new String(new byte[]{11});
 	private byte[] valueDelimiter;
+	private byte[] headerDelimiter;
 	private Optional<byte[]> keyDelimiter;
 
 	@Override
@@ -34,6 +40,11 @@ public class TrailingDelimiterFormat implements S3RecordFormat, Configurable {
 			.map(Object::toString)
 			.map(s -> s.getBytes(parseEncoding(configs, "key.encoding")));
 
+		headerDelimiter = Optional.ofNullable(configs.get("header.delimiter"))
+			.map(Object::toString)
+			.orElse(HEADER_DELIMITER)
+			.getBytes(parseEncoding(configs, "header.encoding"));
+
 		if (!keyDelimiter.isPresent() && configs.containsKey("key.encoding")) {
 			throw new IllegalArgumentException("Key encoding specified without delimiter!");
 		}
@@ -41,19 +52,23 @@ public class TrailingDelimiterFormat implements S3RecordFormat, Configurable {
 
 	private Charset parseEncoding(Map<String, ?> configs, String key) {
 		return Optional.ofNullable(configs.get(key))
-				.map(Object::toString)
-				.map(Charset::forName)
-				.orElse(DEFAULT_ENCODING);
+			.map(Object::toString)
+			.map(Charset::forName)
+			.orElse(DEFAULT_ENCODING);
 	}
 
 	private byte[] encode(ProducerRecord<byte[], byte[]> record) {
+		Optional<byte[]> headers = serialiseHeaders(record.headers());
+
 		List<byte[]> bytes = Stream.of(
 			Optional.ofNullable(record.key()).filter(r -> keyDelimiter.isPresent()),
 			keyDelimiter,
 			Optional.ofNullable(record.value()),
-			Optional.of(valueDelimiter)
+			Optional.of(valueDelimiter),
+			headers,
+			Optional.of(headerDelimiter) // include header delimiter even if there are no headers so it's easier to parse
 		).map(o -> o.orElse(NO_BYTES)).filter(arr -> arr.length > 0).collect(toList());
-		int size = bytes.stream().map(arr -> arr.length).reduce(0, (a,b) -> a + b);
+		int size = bytes.stream().map(arr -> arr.length).reduce(0, (a, b) -> a + b);
 		byte[] result = new byte[size];
 		for (int i = 0, written = 0; i < bytes.size(); i++) {
 			byte[] src = bytes.get(i);
@@ -63,6 +78,14 @@ public class TrailingDelimiterFormat implements S3RecordFormat, Configurable {
 		return result;
 	}
 
+	private Optional<byte[]> serialiseHeaders(Headers headers) {
+		return Optional.ofNullable(headers)
+			.map(Headers::toArray)
+			.filter(a -> a.length > 0)
+			.map(GSON::toJson)
+			.map(a -> a.getBytes(DEFAULT_ENCODING));
+	}
+
 	@Override
 	public S3RecordsWriter newWriter() {
 		return records -> records.map(this::encode);
@@ -70,7 +93,7 @@ public class TrailingDelimiterFormat implements S3RecordFormat, Configurable {
 
 	@Override
 	public S3RecordsReader newReader() {
-		return new DelimitedRecordReader(valueDelimiter, keyDelimiter);
+		return new DelimitedRecordReader(valueDelimiter, keyDelimiter, headerDelimiter);
 	}
 
 }

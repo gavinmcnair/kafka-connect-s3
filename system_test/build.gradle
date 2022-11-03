@@ -1,17 +1,27 @@
 description = "Tests against real Kafka Connect"
 
 dependencies {
-	compile project(':sink')
-	compile project(':source')
+	api project(':sink')
+	api project(':source')
 
-	testCompile group: 'junit', name: 'junit', version: '4.12'
-	testCompile group: 'org.mockito', name: 'mockito-all', version: '1.9.5'
+	testImplementation "org.junit.jupiter:junit-jupiter:5.8.2"
+	testImplementation "org.testcontainers:testcontainers:1.17.3"
+	testImplementation "org.testcontainers:junit-jupiter:1.17.3"
+	testImplementation group: 'org.mockito', name: 'mockito-all', version: '1.9.5'
+	testImplementation "org.assertj:assertj-guava:3.5.0"
 
-	testCompile group: 'org.apache.kafka', name: 'connect-runtime', version: '0.10.1.0'
-	testCompile group: 'org.apache.kafka', name: 'connect-json', version: '0.10.1.0'
-	testCompile group: 'org.apache.kafka', name: 'kafka_2.11', version: '0.10.1.0'
+	testImplementation group: 'org.apache.kafka', name: 'connect-runtime', version: '3.2.0'
+	testImplementation group: 'org.apache.kafka', name: 'connect-json', version: '3.2.0'
+	testImplementation group: 'org.apache.kafka', name: 'kafka_2.12', version: '3.2.0'
+	testImplementation group: 'org.apache.kafka', name: 'kafka-metadata', version: '3.2.0'
 
-	testCompile group: 'com.netflix.curator', name: 'curator-test', version: '1.2.6'
+	//testImplementation group: 'com.netflix.curator', name: 'curator-test', version: '1.2.6'
+	testImplementation group: 'org.apache.curator', name: 'curator-test', version: '5.3.0'
 
-	testCompile(group: 'com.spotify', name: 'docker-client', version: '6.0.0')
+	testImplementation(group: 'com.spotify', name: 'docker-client', version: '8.16.0')
 }
+
+test {
+	useJUnitPlatform()
+}
+
