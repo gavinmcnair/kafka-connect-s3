@@ -20,7 +20,6 @@ description = "kafka-connect-s3"
 allprojects  {
     apply plugin: 'idea'
 	apply plugin: 'java-library'
-
     group = 'com.spredfast.kafka.connect.s3'
 	version = '1.0'
 
@@ -30,6 +29,12 @@ allprojects  {
 
 	repositories {
 		mavenCentral()
+	}
+
+	dependencies {
+		implementation "ch.qos.logback:logback-core:1.2.6"
+		implementation "ch.qos.logback:logback-classic:1.2.6"
+		implementation "org.slf4j:slf4j-api:1.7.30"
 	}
 }
 
@@ -44,6 +49,7 @@ shadowJar {
 		exclude(dependency('net.jpountz.lz4:.*:.*'))
 		exclude(dependency('org.xerial.snappy:.*:.*'))
 		exclude(dependency('org.slf4j:.*:.*'))
+		exclude(dependency("ch.qos.logback:.*:.*"))
 	}
 
 	// for things we directly depend on, repackage so we don't conflict with other connectors
