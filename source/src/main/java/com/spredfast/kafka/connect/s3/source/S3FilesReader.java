@@ -21,7 +21,6 @@ import org.apache.kafka.connect.header.ConnectHeaders;
 import org.apache.kafka.connect.header.Headers;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.InputStreamReader;
@@ -55,7 +54,6 @@ import static java.util.stream.Collectors.toList;
 public class S3FilesReader implements Iterable<S3SourceRecord> {
 
 	private static final Logger log = LoggerFactory.getLogger(S3FilesReader.class);
-
 	public static final Pattern DEFAULT_PATTERN = Pattern.compile(
 		"(\\/|^)"                        // match the / or the start of the key so we shouldn't have to worry about prefix
 			+ "(?<topic>[^/]+?)-"            // assuming no / in topic names
