@@ -21,6 +21,8 @@ import org.apache.kafka.connect.header.ConnectHeaders;
 import org.apache.kafka.connect.header.Headers;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+//import ch.qos.logback.classic.Level;
+//import ch.qos.logback.classic.Logger;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.InputStreamReader;
@@ -52,6 +54,9 @@ import static java.util.stream.Collectors.toList;
  * Any other exception should be considered a permanent failure.
  */
 public class S3FilesReader implements Iterable<S3SourceRecord> {
+
+	//private static final Logger log = (ch.qos.logback.classic.Logger)LoggerFactory.getLogger(S3FilesReader.class);
+	//log.setLevel(Level.DEBUGG)
 
 	private static final Logger log = LoggerFactory.getLogger(S3FilesReader.class);
 	public static final Pattern DEFAULT_PATTERN = Pattern.compile(
