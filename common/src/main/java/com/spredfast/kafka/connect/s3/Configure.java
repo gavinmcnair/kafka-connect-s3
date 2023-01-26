@@ -82,9 +82,7 @@ public abstract class Configure {
 				converter = (HeaderConverter) Class.forName(className).getDeclaredConstructor().newInstance();
 			}
 
-			if (converter instanceof Configurable) {
-				((Configurable) converter).configure(props);
-			}
+		    converter.configure(props);
 
 			// grab any properties intended for the converter
 			Map<String, Object> subKeys = subKeys(classNameProp, props);
