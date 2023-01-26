@@ -76,10 +76,10 @@ public abstract class Configure {
 				if (defaultConverterClass == null) {
 					return null;
 				} else {
-					converter = defaultConverterClass.newInstance();
+					converter = defaultConverterClass.getDeclaredConstructor().newInstance();
 				}
 			} else {
-				converter = (HeaderConverter) Class.forName(className).newInstance();
+				converter = (HeaderConverter) Class.forName(className).getDeclaredConstructor().newInstance();
 			}
 
 			if (converter instanceof Configurable) {
