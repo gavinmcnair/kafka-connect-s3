@@ -12,6 +12,7 @@ import java.util.Map;
 import org.apache.kafka.common.Configurable;
 import org.apache.kafka.connect.errors.ConnectException;
 import org.apache.kafka.connect.storage.Converter;
+import org.apache.kafka.connect.storage.HeaderConverter;
 
 public abstract class Configure {
 
@@ -62,6 +63,35 @@ public abstract class Configure {
 			return converter;
 		} catch (Exception e) {
 			throw new IllegalArgumentException("Could not create S3 converter for props " + classNameProp + " isKey=" + isKey, e);
+		}
+	}
+
+	public static HeaderConverter buildHeaderConverter(Map<String, ?> props, String classNameProp, Class<? extends HeaderConverter> defaultConverterClass) {
+		String className = (String) props.get(classNameProp);
+
+		try {
+			HeaderConverter converter;
+
+			if (className == null) {
+				if (defaultConverterClass == null) {
+					return null;
+				} else {
+					converter = defaultConverterClass.getDeclaredConstructor().newInstance();
+				}
+			} else {
+				converter = (HeaderConverter) Class.forName(className).getDeclaredConstructor().newInstance();
+			}
+
+		    converter.configure(props);
+
+			// grab any properties intended for the converter
+			Map<String, Object> subKeys = subKeys(classNameProp, props);
+
+			converter.configure(subKeys);
+
+			return converter;
+		} catch (Exception e) {
+			throw new IllegalArgumentException("Could not create S3 converter for props " + classNameProp, e);
 		}
 	}
 
