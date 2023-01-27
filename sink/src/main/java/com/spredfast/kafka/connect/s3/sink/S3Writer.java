@@ -131,6 +131,7 @@ public class S3Writer {
 
 	// We store chunk files with a date prefix just to make finding them and navigating around the bucket a bit easier
 	// date is meaningless other than "when this was uploaded"
+	// that potentially makes the sink connector not idempotent if same file is pushed on two different days because the offsets haven't been stored?
 	private String getChunkFileKey(String localFilePath) {
 		Path p = Paths.get(localFilePath);
 		SimpleDateFormat df = new SimpleDateFormat("yyyy-MM-dd");
