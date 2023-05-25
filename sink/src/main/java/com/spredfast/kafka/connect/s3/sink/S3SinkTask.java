@@ -79,7 +79,8 @@ public class S3SinkTask extends SinkTask {
 
 		keyConverter = ofNullable(Configure.buildConverter(config, "key.converter", true, null));
 		valueConverter = Configure.buildConverter(config, "value.converter", false, AlreadyBytesConverter.class);
-		headerConverter = new SimpleHeaderConverter();
+		// can override with ByteArrayConverter which is an instance of HeaderConverter too https://github.com/a0x8o/kafka/blob/827b06ac3de0fd1a65f58531cf90f7d815a67d57/connect/runtime/src/main/java/org/apache/kafka/connect/converters/ByteArrayConverter.java#L35
+		headerConverter = Configure.buildHeaderConverter(config, "header.converter", SimpleHeaderConverter.class);
 
 		String bucket = configGet("s3.bucket")
 			.filter(s -> !s.isEmpty())
